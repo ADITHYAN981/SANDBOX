@@ -1,0 +1,9 @@
+# Root .gitignore
+node_modules/
+backend/node_modules/
+backend/.env
+backend/.env.local
+backend/.env.production
+.DS_Store
+Thumbs.db
+

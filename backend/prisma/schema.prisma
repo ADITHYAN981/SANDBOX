@@ -1,0 +1,180 @@
+// =============================================================================
+// Brightloop Software — Prisma Schema
+// Database: PostgreSQL (Render)
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── User Model ─────────────────────────────────────────────────────────────────
+model User {
+  id           String        @id @default(uuid())
+  fullName     String
+  email        String        @unique
+  passwordHash String
+  role         String        @default("customer") // "admin" | "staff" | "customer"
+  title        String?
+  company      String?
+  isVerified   Boolean       @default(false)
+  isActive     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  memberships  TeamMember[]
+
+  @@map("users")
+}
+
+// ── Team & Memberships ─────────────────────────────────────────────────────────
+model Team {
+  id          String        @id @default(uuid())
+  name        String
+  description String?
+  ownerId     String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  members     TeamMember[]
+  subscriptions Subscription[]
+  invoices    Invoice[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  id        String   @id @default(uuid())
+  teamId    String
+  userId    String
+  role      String   @default("member") // "owner" | "admin" | "member"
+  joinedAt  DateTime @default(now())
+
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@map("team_members")
+}
+
+// ── Product Catalog ───────────────────────────────────────────────────────────
+model Product {
+  id         String   @id @default(uuid())
+  name       String
+  type       String   @default("Software")
+  salesPrice Float    @default(0)
+  costPrice  Float    @default(0)
+  variants   Json     @default("[]")
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("products")
+}
+
+// ── Billing Frequency Plans ────────────────────────────────────────────────────
+model Plan {
+  id               String   @id @default(uuid())
+  name             String
+  frequency        String   @default("Monthly")
+  multiplierMonths Float    @default(1)
+  minQty           Int      @default(1)
+  autoClose        Boolean  @default(false)
+  allowPauseRenew  Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("plans")
+}
+
+// ── Subscription Contracts ────────────────────────────────────────────────────
+model Subscription {
+  id              String   @id
+  customer        String
+  customerEmail   String
+  planId          String
+  startDate       String
+  nextBillingDate String
+  expiryDate      String?
+  paymentTerms    String   @default("Immediate Payment")
+  discountId      String?
+  stage           String   @default("Draft") // Draft | Quotation | Confirmed | Active | Paused | Closed
+  lines           Json     @default("[]")
+  teamId          String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  team            Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  @@map("subscriptions")
+}
+
+// ── Invoices ──────────────────────────────────────────────────────────────────
+model Invoice {
+  id            String   @id
+  subId         String?
+  customer      String
+  customerEmail String
+  date          String
+  dueDate       String
+  subtotal      Float    @default(0)
+  tax           Float    @default(0)
+  discountVal   Float    @default(0)
+  total         Float    @default(0)
+  status        String   @default("Draft") // Draft | Confirmed | Paid | Cancelled
+  lines         Json     @default("[]")
+  teamId        String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  team          Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  @@map("invoices")
+}
+
+// ── Payments ──────────────────────────────────────────────────────────────────
+model Payment {
+  id         String   @id
+  invoiceId  String?
+  customer   String
+  method     String   @default("Credit Card")
+  date       String
+  amount     Float    @default(0)
+  note       String?
+  teamId     String?
+  createdAt  DateTime @default(now())
+
+  @@map("payments")
+}
+
+// ── Discount Rules ────────────────────────────────────────────────────────────
+model DiscountRule {
+  id         String   @id
+  name       String
+  type       String   @default("percent") // percent | fixed
+  value      Float    @default(0)
+  minSpend   Float    @default(0)
+  usageLimit Int      @default(100)
+  usedCount  Int      @default(0)
+  status     String   @default("active")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("discount_rules")
+}
+
+// ── Tax Rules ─────────────────────────────────────────────────────────────────
+model TaxRule {
+  id        String   @id
+  name      String
+  rate      Float    @default(0)
+  desc      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("tax_rules")
+}
