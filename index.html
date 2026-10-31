@@ -14,6 +14,236 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
+  <!-- ========================================================
+       LOGIN SCREEN — Full-page auth gate
+       ======================================================== -->
+  <div id="login-screen">
+    <!-- Ambient orbs -->
+    <div class="login-orb login-orb-1"></div>
+    <div class="login-orb login-orb-2"></div>
+    <div class="login-orb login-orb-3"></div>
+
+    <div class="login-card">
+      <!-- Accent stripe rendered by CSS ::before -->
+      <div class="login-card-inner">
+
+        <!-- Brand -->
+        <div class="login-brand">
+          <div class="login-brand-badge">B</div>
+          <div class="login-brand-text">
+            <h1>Brightloop <span>Software</span></h1>
+            <p>Subscription &amp; Billing Engine</p>
+          </div>
+        </div>
+
+        <!-- Role selector tabs: Admin | Employee | User -->
+        <div class="login-tabs" role="tablist">
+          <button class="login-tab-btn active" id="tab-admin" role="tab" aria-selected="true" onclick="switchLoginRole('admin')">
+            <span class="login-role-badge">👑</span> Admin
+          </button>
+          <button class="login-tab-btn" id="tab-employee" role="tab" aria-selected="false" onclick="switchLoginRole('employee')">
+            <span class="login-role-badge">💼</span> Employee
+          </button>
+          <button class="login-tab-btn" id="tab-user" role="tab" aria-selected="false" onclick="switchLoginRole('user')">
+            <span class="login-role-badge">👤</span> User
+          </button>
+        </div>
+
+        <!-- ── ADMIN PANEL ── -->
+        <div id="panel-admin">
+          <div class="login-hint-box">
+            <p>Master Credentials</p>
+            <div class="hint-cred" id="admin-hint-cred">Loading...</div>
+          </div>
+          <div class="login-divider"><span>Sign In as Administrator</span></div>
+          <form id="admin-login-form" autocomplete="off" onsubmit="handleMasterLogin(event,'admin')">
+            <div class="login-field">
+              <label for="admin-email">Email Address</label>
+              <input type="email" id="admin-email" placeholder="admin@brightloop.com" required autocomplete="username">
+            </div>
+            <div class="login-field">
+              <label for="admin-password">Password</label>
+              <input type="password" id="admin-password" placeholder="Enter admin password" required autocomplete="current-password">
+            </div>
+            <button type="submit" class="login-submit-btn login-submit-admin" id="admin-submit-btn">
+              🔐 Sign In as Admin
+            </button>
+            <span class="login-error" id="admin-error-msg"></span>
+          </form>
+        </div>
+
+        <!-- ── EMPLOYEE PANEL ── -->
+        <div id="panel-employee" class="hidden">
+          <div class="login-hint-box login-hint-employee">
+            <p>Master Credentials</p>
+            <div class="hint-cred" id="employee-hint-cred">Loading...</div>
+          </div>
+          <div class="login-divider"><span>Sign In as Employee</span></div>
+          <form id="employee-login-form" autocomplete="off" onsubmit="handleMasterLogin(event,'employee')">
+            <div class="login-field">
+              <label for="employee-email">Email Address</label>
+              <input type="email" id="employee-email" placeholder="employee@brightloop.com" required autocomplete="username">
+            </div>
+            <div class="login-field">
+              <label for="employee-password">Password</label>
+              <input type="password" id="employee-password" placeholder="Enter employee password" required autocomplete="current-password">
+            </div>
+            <button type="submit" class="login-submit-btn login-submit-employee" id="employee-submit-btn">
+              🔐 Sign In as Employee
+            </button>
+            <span class="login-error" id="employee-error-msg"></span>
+          </form>
+        </div>
+
+        <!-- ── USER PANEL (Login + Register sub-tabs) ── -->
+        <div id="panel-user" class="hidden">
+          <div class="user-subtabs">
+            <button class="user-subtab-btn active" id="subtab-login" onclick="switchUserSubTab('login')">Sign In</button>
+            <button class="user-subtab-btn" id="subtab-register" onclick="switchUserSubTab('register')">Register</button>
+          </div>
+
+          <!-- User Login -->
+          <div id="user-login-panel">
+            <div class="login-divider"><span>Sign In to Your Portal</span></div>
+            <form id="user-login-form" autocomplete="off" onsubmit="handleUserLogin(event)">
+              <div class="login-field">
+                <label for="user-login-email">Email Address</label>
+                <input type="email" id="user-login-email" placeholder="you@company.com" required autocomplete="username">
+              </div>
+              <div class="login-field">
+                <label for="user-login-password">Password</label>
+                <input type="password" id="user-login-password" placeholder="Your password" required autocomplete="current-password">
+              </div>
+              <button type="submit" class="login-submit-btn login-submit-user" id="user-login-btn">🚀 Sign In to Portal</button>
+              <span class="login-error" id="user-login-error"></span>
+              <p class="login-switch-text">No account? <a href="#" onclick="switchUserSubTab('register');return false;">Register here</a></p>
+            </form>
+          </div>
+
+          <!-- User Register -->
+          <div id="user-register-panel" class="hidden">
+            <div class="login-divider"><span>Create Your Account</span></div>
+            <form id="user-register-form" autocomplete="off" onsubmit="handleUserRegister(event)">
+              <div class="login-field">
+                <label for="reg-name">Full Name <span style="color:#f87171">*</span></label>
+                <input type="text" id="reg-name" placeholder="e.g. John Smith" required>
+              </div>
+              <div class="login-field">
+                <label for="reg-company">Company Name <span style="color:#f87171">*</span></label>
+                <input type="text" id="reg-company" placeholder="e.g. Horizon Labs LLC" required>
+              </div>
+              <div class="login-field">
+                <label for="reg-email">Email Address <span style="color:#f87171">*</span></label>
+                <input type="email" id="reg-email" placeholder="you@company.com" required autocomplete="email">
+              </div>
+              <div class="login-field">
+                <label for="reg-password">Password <span style="color:#f87171">*</span></label>
+                <input type="password" id="reg-password" placeholder="Min 8 chars, 1 uppercase, 1 special" required autocomplete="new-password">
+                <span class="login-pw-hint">Must be &gt;8 chars with 1 uppercase &amp; 1 special (!@#$%^&amp;*)</span>
+              </div>
+              <button type="submit" class="login-submit-btn login-submit-user" id="user-register-btn">✨ Create Account</button>
+              <span class="login-error" id="user-register-error"></span>
+              <span class="login-success" id="user-register-success"></span>
+              <p class="login-switch-text">Already have an account? <a href="#" onclick="switchUserSubTab('login');return false;">Sign in</a></p>
+            </form>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================
+       USER PORTAL — shown after user login
+       ======================================================== -->
+  <div id="user-portal" class="hidden" style="min-height:100vh;background:linear-gradient(135deg,#0f172a 0%,#1e1b4b 50%,#0c4a6e 100%);position:relative;overflow:hidden;">
+    <div style="position:absolute;width:500px;height:500px;background:rgba(113,75,103,0.15);border-radius:50%;filter:blur(80px);top:-100px;left:-100px;pointer-events:none;"></div>
+    <div style="position:absolute;width:400px;height:400px;background:rgba(0,135,132,0.12);border-radius:50%;filter:blur(80px);bottom:-80px;right:-80px;pointer-events:none;"></div>
+
+    <!-- Portal Header -->
+    <header style="position:sticky;top:0;z-index:40;background:rgba(15,23,42,0.8);backdrop-filter:blur(16px);border-bottom:1px solid rgba(255,255,255,0.08);padding:0.85rem 2rem;display:flex;align-items:center;justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:0.75rem;">
+        <div class="login-brand-badge" style="width:36px;height:36px;font-size:1.1rem;flex-shrink:0;">B</div>
+        <div>
+          <div style="font-weight:800;color:#fff;font-size:1rem;line-height:1.2;">Brightloop <span style="color:#c4b5d6;">Portal</span></div>
+          <div style="font-size:0.68rem;color:rgba(255,255,255,0.4);">Customer Self-Service</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:0.75rem;">
+        <div style="display:flex;align-items:center;gap:0.6rem;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:0.4rem 1rem 0.4rem 0.4rem;">
+          <div id="portal-avatar" style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#1d4ed8);display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:0.8rem;">?</div>
+          <div>
+            <div id="portal-user-name" style="font-size:0.82rem;font-weight:700;color:#fff;">—</div>
+            <div id="portal-user-company" style="font-size:0.68rem;color:rgba(255,255,255,0.5);">—</div>
+          </div>
+        </div>
+        <button class="btn-logout" onclick="handleLogout()" style="color:rgba(255,255,255,0.7);border-color:rgba(255,255,255,0.2);">⇥ Logout</button>
+      </div>
+    </header>
+
+    <!-- Portal Body -->
+    <main style="max-width:1100px;margin:0 auto;padding:2.5rem 1.5rem;position:relative;z-index:1;">
+
+      <!-- Welcome Banner -->
+      <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:2rem 2.5rem;margin-bottom:2rem;display:flex;align-items:center;gap:1.25rem;">
+        <div style="font-size:3rem;">🎉</div>
+        <div>
+          <h2 id="portal-welcome-heading" style="font-size:1.5rem;font-weight:800;color:#fff;margin-bottom:0.25rem;">Welcome to your Portal!</h2>
+          <p id="portal-welcome-sub" style="color:rgba(255,255,255,0.6);font-size:0.9rem;">Manage your subscriptions, view invoices and track payments.</p>
+        </div>
+      </div>
+
+      <!-- KPI Cards -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin-bottom:2rem;">
+        <div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:1.35rem;">
+          <div style="font-size:1.75rem;margin-bottom:0.5rem;">📄</div>
+          <div style="font-size:0.72rem;font-weight:700;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.25rem;">Active Subscriptions</div>
+          <div id="portal-sub-count" style="font-size:1.75rem;font-weight:800;color:#fff;font-family:var(--font-mono);">0</div>
+        </div>
+        <div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:1.35rem;">
+          <div style="font-size:1.75rem;margin-bottom:0.5rem;">🧾</div>
+          <div style="font-size:0.72rem;font-weight:700;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.25rem;">Total Invoices</div>
+          <div id="portal-inv-count" style="font-size:1.75rem;font-weight:800;color:#fff;font-family:var(--font-mono);">0</div>
+        </div>
+        <div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:1.35rem;">
+          <div style="font-size:1.75rem;margin-bottom:0.5rem;">💳</div>
+          <div style="font-size:0.72rem;font-weight:700;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.25rem;">Total Paid</div>
+          <div id="portal-paid-total" style="font-size:1.75rem;font-weight:800;color:#34d399;font-family:var(--font-mono);">$0.00</div>
+        </div>
+        <div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:1.35rem;">
+          <div style="font-size:1.75rem;margin-bottom:0.5rem;">⚠️</div>
+          <div style="font-size:0.72rem;font-weight:700;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.25rem;">Outstanding</div>
+          <div id="portal-overdue-total" style="font-size:1.75rem;font-weight:800;color:#f87171;font-family:var(--font-mono);">$0.00</div>
+        </div>
+      </div>
+
+      <!-- Recent Invoices Table -->
+      <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:12px;overflow:hidden;">
+        <div style="padding:1.25rem 1.5rem;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;justify-content:space-between;align-items:center;">
+          <h3 style="font-size:1rem;font-weight:700;color:#fff;">My Recent Invoices</h3>
+          <span id="portal-inv-badge" style="background:rgba(59,130,246,0.15);color:#93c5fd;font-size:0.72rem;font-weight:700;padding:.2rem .65rem;border-radius:999px;">0 records</span>
+        </div>
+        <div class="table-container" style="background:transparent;">
+          <table class="data-table" style="background:transparent;">
+            <thead>
+              <tr>
+                <th style="background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.5);">Invoice #</th>
+                <th style="background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.5);">Date</th>
+                <th style="background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.5);">Plan</th>
+                <th style="background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.5);">Total</th>
+                <th style="background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.5);">Status</th>
+              </tr>
+            </thead>
+            <tbody id="portal-invoices-tbody">
+              <tr><td colspan="5" style="text-align:center;padding:2rem;color:rgba(255,255,255,0.3);border-color:rgba(255,255,255,0.05);">No invoices found for your account.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
   <!-- Global App Container -->
   <div class="app-layout">
     
@@ -48,34 +278,30 @@
           <button class="nav-tab" data-tab="discounts-taxes">
             <span class="tab-icon">🏷️</span> Discounts & Taxes
           </button>
-          <button class="nav-tab" data-tab="staff" id="staff-nav-tab">
+          <button class="nav-tab admin-only" data-tab="staff" id="staff-nav-tab">
             <span class="tab-icon">👥</span> Staff
           </button>
         </nav>
       </div>
 
-      <!-- Nav Right Controls: Role Switcher & User Profile -->
+      <!-- Nav Right Controls: User Info & Actions -->
       <div class="nav-right">
-        <!-- Interactive Role Switcher Pill -->
-        <div class="role-selector-box" title="Switch User Role to test Role-Based Permissions">
-          <span class="role-label">Active Role:</span>
-          <select id="role-switcher-select" aria-label="Switch User Role">
-            <option value="admin">👑 Admin (Sarah Jenkins)</option>
-            <option value="staff">💼 Internal Staff (Alex Rivera)</option>
-            <option value="customer_apex">🏢 Customer Portal (Apex Digital)</option>
-            <option value="customer_nova">🛍️ Customer Portal (Nova Retail)</option>
-          </select>
-        </div>
-
         <!-- Billing Day Automation Trigger -->
-        <button id="run-billing-day-btn" class="btn btn-warning btn-sm" title="Run Billing Day batch to generate due invoices automatically">
+        <button id="run-billing-day-btn" class="btn btn-warning btn-sm admin-only" title="Run Billing Day batch to generate due invoices automatically">
           ⚡ Run Billing Day
         </button>
 
-        <!-- Customer Sign Up / Account modal trigger -->
-        <button id="auth-modal-trigger-btn" class="btn btn-secondary btn-sm">
-          Sign In / Register
-        </button>
+        <!-- Logged-in user info widget -->
+        <div class="nav-user-info" id="nav-user-info-widget">
+          <div class="nav-user-avatar" id="nav-user-avatar">?</div>
+          <div>
+            <div class="nav-user-name" id="nav-user-name">—</div>
+            <span class="nav-user-role" id="nav-user-role">—</span>
+          </div>
+        </div>
+
+        <!-- Logout -->
+        <button class="btn-logout" id="logout-btn" onclick="handleLogout()">⇥ Logout</button>
       </div>
     </header>
 
@@ -371,7 +597,7 @@
             <h1>Products, Variants & Plans</h1>
             <p class="text-muted">Manage sellable catalog items, brand variants (e.g., Odoo Brand +$560), and recurring billing frequencies.</p>
           </div>
-          <div class="header-actions" id="products-admin-actions">
+          <div class="header-actions admin-only" id="products-admin-actions">
             <button class="btn btn-secondary" id="open-new-product-modal-btn">+ New Product</button>
             <button class="btn btn-primary" id="open-new-plan-modal-btn">+ New Plan</button>
           </div>
@@ -435,7 +661,7 @@
             <h1>Discount Rules & Tax Calculation</h1>
             <p class="text-muted">Set percentage or fixed discounts with min purchase thresholds, usage limits, and automated tax rates.</p>
           </div>
-          <div class="header-actions" id="discounts-admin-actions">
+          <div class="header-actions admin-only" id="discounts-admin-actions">
             <button class="btn btn-primary" id="open-new-discount-modal-btn">+ New Discount Rule</button>
           </div>
         </div>
@@ -988,6 +1214,6 @@
   <!-- Toast Notification Container -->
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
-  <script src="script.js"></script>
+  <script src="script (2).js"></script>
 </body>
 </html>
