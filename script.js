@@ -40,7 +40,51 @@ const MASTER_USERS = {
   }
 };
 
-// Registered users stored in localStorage
+// =============================================================================
+// API CLIENT — Connects frontend to Express & Render PostgreSQL backend
+// =============================================================================
+
+const API_BASE = (window.location.port === '5500' || window.location.port === '3000' || window.location.protocol === 'file:')
+  ? 'http://localhost:5000'
+  : '';
+
+const ApiClient = {
+  getToken() {
+    return localStorage.getItem('brightloop_token');
+  },
+  setToken(token) {
+    if (token) localStorage.setItem('brightloop_token', token);
+    else localStorage.removeItem('brightloop_token');
+  },
+  async request(method, path, body = null) {
+    const headers = { 'Content-Type': 'application/json' };
+    const token = this.getToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const url = `${API_BASE}${path}`;
+    try {
+      const res = await fetch(url, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || `HTTP ${res.status}: ${res.statusText}`);
+      }
+      return data;
+    } catch (err) {
+      console.warn(`[API] ${method} ${path} error:`, err.message);
+      throw err;
+    }
+  },
+  get(path) { return this.request('GET', path); },
+  post(path, body) { return this.request('POST', path, body); },
+  put(path, body) { return this.request('PUT', path, body); },
+  delete(path) { return this.request('DELETE', path); }
+};
+
+// Registered users stored in localStorage (fallback cache)
 const USERS_STORAGE_KEY = 'brightloop_registered_users_v1';
 
 let _loginRoleTab = 'admin'; // active tab: 'admin' | 'employee' | 'user'
@@ -134,7 +178,7 @@ function switchUserSubTab(sub) {
 // MASTER LOGIN  (Admin / Employee)
 // =============================================================================
 
-function handleMasterLogin(e, role) {
+async function handleMasterLogin(e, role) {
   e.preventDefault();
   const emailInput = document.getElementById(role + '-email').value.trim().toLowerCase();
   const passInput  = document.getElementById(role + '-password').value;
@@ -142,28 +186,49 @@ function handleMasterLogin(e, role) {
   const btnEl      = document.getElementById(role + '-submit-btn');
 
   errEl.textContent = '';
+  btnEl.textContent = '⏳ Authenticating...';
 
-  const master = MASTER_USERS[role];
-  if (!master || master.email.toLowerCase() !== emailInput || master.password !== passInput) {
-    errEl.textContent = '✕ Incorrect master credentials. Please try again.';
-    return;
+  try {
+    const res = await ApiClient.post('/api/auth/login', { email: emailInput, password: passInput });
+    if (res && res.success && res.token) {
+      ApiClient.setToken(res.token);
+      _sessionUser = res.user;
+
+      btnEl.textContent = '✓ Welcome, ' + res.user.fullName + '!';
+      btnEl.style.background = 'linear-gradient(135deg, #10b981, #059669)';
+
+      setTimeout(async () => {
+        revealMainApp(_sessionUser);
+        if (window.brightloopApp && window.brightloopApp.syncWithBackend) {
+          await window.brightloopApp.syncWithBackend();
+        }
+      }, 700);
+      return;
+    }
+  } catch (apiErr) {
+    // If backend reports an error, check if local fallback credentials match
+    const master = MASTER_USERS[role];
+    if (master && master.email.toLowerCase() === emailInput && master.password === passInput) {
+      btnEl.textContent = '✓ Welcome, ' + master.name + '!';
+      btnEl.style.background = 'linear-gradient(135deg, #10b981, #059669)';
+      setTimeout(() => {
+        _sessionUser = { ...master };
+        revealMainApp(_sessionUser);
+      }, 700);
+      return;
+    }
+
+    btnEl.textContent = role === 'admin' ? '🔐 Sign In as Admin' : '🔐 Sign In as Employee';
+    btnEl.style.background = '';
+    errEl.textContent = '✕ ' + (apiErr.message || 'Incorrect master credentials. Please try again.');
   }
-
-  // Success animation
-  btnEl.textContent = '✓ Welcome, ' + master.name + '!';
-  btnEl.style.background = 'linear-gradient(135deg, #10b981, #059669)';
-
-  setTimeout(() => {
-    _sessionUser = { ...master };
-    revealMainApp(_sessionUser);
-  }, 750);
 }
 
 // =============================================================================
 // USER REGISTER
 // =============================================================================
 
-function handleUserRegister(e) {
+async function handleUserRegister(e) {
   e.preventDefault();
   const name    = document.getElementById('reg-name').value.trim();
   const company = document.getElementById('reg-company').value.trim();
@@ -180,45 +245,47 @@ function handleUserRegister(e) {
   const pwErr = validatePassword(password);
   if (pwErr) { errEl.textContent = '✕ ' + pwErr; return; }
 
-  // Check if email already exists
-  const users = getRegisteredUsers();
-  if (users.find(u => u.email === email)) {
-    errEl.textContent = '✕ An account with this email already exists. Please sign in.';
-    return;
-  }
+  btnEl.textContent = '⏳ Creating Account...';
 
-  // Register user
-  const newUser = {
-    id: 'usr_reg_' + Date.now(),
-    name,
-    company,
-    email,
-    password, // NOTE: plain-text is fine for this no-backend demo
-    role: 'customer',
-    initials: getInitials(name),
-    registeredAt: new Date().toISOString()
-  };
-  users.push(newUser);
-  saveRegisteredUsers(users);
+  try {
+    const res = await ApiClient.post('/api/auth/register', {
+      fullName: name,
+      company,
+      email,
+      password,
+      role: 'customer'
+    });
 
-  btnEl.textContent = '✓ Account created!';
-  btnEl.style.background = 'linear-gradient(135deg,#10b981,#059669)';
-  sucEl.textContent = '🎉 Registration successful! Redirecting to your portal...';
+    if (res && res.success) {
+      if (res.token) ApiClient.setToken(res.token);
+      _sessionUser = res.user;
 
-  setTimeout(() => {
-    _sessionUser = newUser;
-    revealUserPortal(newUser);
-    // Reset button
+      btnEl.textContent = '✓ Account created!';
+      btnEl.style.background = 'linear-gradient(135deg,#10b981,#059669)';
+      sucEl.textContent = '🎉 Registration successful! Redirecting to your portal...';
+
+      setTimeout(async () => {
+        revealUserPortal(_sessionUser);
+        if (window.brightloopApp && window.brightloopApp.syncWithBackend) {
+          await window.brightloopApp.syncWithBackend();
+        }
+        btnEl.textContent = '✨ Create Account';
+        btnEl.style.background = '';
+      }, 1000);
+      return;
+    }
+  } catch (apiErr) {
     btnEl.textContent = '✨ Create Account';
     btnEl.style.background = '';
-  }, 1200);
+    errEl.textContent = '✕ ' + (apiErr.message || 'Registration failed.');
+  }
 }
 
 // =============================================================================
 // USER LOGIN
 // =============================================================================
 
-function handleUserLogin(e) {
+async function handleUserLogin(e) {
   e.preventDefault();
   const email    = document.getElementById('user-login-email').value.trim().toLowerCase();
   const password = document.getElementById('user-login-password').value;
@@ -226,24 +293,32 @@ function handleUserLogin(e) {
   const btnEl    = document.getElementById('user-login-btn');
 
   errEl.textContent = '';
+  btnEl.textContent = '⏳ Signing in...';
 
-  const users = getRegisteredUsers();
-  const found = users.find(u => u.email === email && u.password === password);
+  try {
+    const res = await ApiClient.post('/api/auth/login', { email, password });
+    if (res && res.success && res.token) {
+      ApiClient.setToken(res.token);
+      _sessionUser = res.user;
 
-  if (!found) {
-    errEl.textContent = '✕ Invalid email or password. Register if you don\'t have an account.';
-    return;
-  }
+      btnEl.textContent = '✓ Welcome, ' + res.user.fullName + '!';
+      btnEl.style.background = 'linear-gradient(135deg,#10b981,#059669)';
 
-  btnEl.textContent = '✓ Welcome, ' + found.name + '!';
-  btnEl.style.background = 'linear-gradient(135deg,#10b981,#059669)';
-
-  setTimeout(() => {
-    _sessionUser = found;
-    revealUserPortal(found);
+      setTimeout(async () => {
+        revealUserPortal(_sessionUser);
+        if (window.brightloopApp && window.brightloopApp.syncWithBackend) {
+          await window.brightloopApp.syncWithBackend();
+        }
+        btnEl.textContent = '🚀 Sign In to Portal';
+        btnEl.style.background = '';
+      }, 700);
+      return;
+    }
+  } catch (apiErr) {
     btnEl.textContent = '🚀 Sign In to Portal';
     btnEl.style.background = '';
-  }, 750);
+    errEl.textContent = '✕ ' + (apiErr.message || 'Invalid email or password.');
+  }
 }
 
 // =============================================================================
@@ -424,6 +499,8 @@ function applyLoginRoleRestrictions(role) {
 
 function handleLogout() {
   _sessionUser = null;
+  ApiClient.setToken(null);
+  try { ApiClient.post('/api/auth/logout', {}); } catch (e) {}
 
   // Hide portal if visible
   const portal = document.getElementById('user-portal');
@@ -465,12 +542,30 @@ function handleLogout() {
 }
 
 // =============================================================================
-// BOOT
+// BOOT & SESSION RESTORATION
 // =============================================================================
 
-document.addEventListener('DOMContentLoaded', function () {
+document.addEventListener('DOMContentLoaded', async function () {
   switchLoginRole('admin');
   switchUserSubTab('login');
+
+  // Check persistent session
+  const token = ApiClient.getToken();
+  if (token) {
+    try {
+      const res = await ApiClient.get('/api/auth/me');
+      if (res && res.success && res.user) {
+        _sessionUser = res.user;
+        if (res.user.role === 'customer') {
+          revealUserPortal(res.user);
+        } else {
+          revealMainApp(res.user);
+        }
+      }
+    } catch (e) {
+      ApiClient.setToken(null);
+    }
+  }
 });
 
 
@@ -842,6 +937,40 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function saveState() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  async function syncStateWithBackend() {
+    try {
+      const [subsRes, invsRes, paysRes, prodsRes, plansRes, discsRes, taxesRes, staffRes, teamsRes] = await Promise.allSettled([
+        ApiClient.get('/api/subscriptions'),
+        ApiClient.get('/api/invoices'),
+        ApiClient.get('/api/payments'),
+        ApiClient.get('/api/products'),
+        ApiClient.get('/api/plans'),
+        ApiClient.get('/api/discounts'),
+        ApiClient.get('/api/taxes'),
+        ApiClient.get('/api/staff'),
+        ApiClient.get('/api/teams'),
+      ]);
+
+      if (subsRes.status === 'fulfilled' && subsRes.value?.data?.length) state.subscriptions = subsRes.value.data;
+      if (invsRes.status === 'fulfilled' && invsRes.value?.data?.length) state.invoices = invsRes.value.data;
+      if (paysRes.status === 'fulfilled' && paysRes.value?.data?.length) state.payments = paysRes.value.data;
+      if (prodsRes.status === 'fulfilled' && prodsRes.value?.data?.length) state.products = prodsRes.value.data;
+      if (plansRes.status === 'fulfilled' && plansRes.value?.data?.length) state.plans = plansRes.value.data;
+      if (discsRes.status === 'fulfilled' && discsRes.value?.data?.length) state.discounts = discsRes.value.data;
+      if (taxesRes.status === 'fulfilled' && taxesRes.value?.data?.length) state.taxes = taxesRes.value.data;
+      if (staffRes.status === 'fulfilled' && staffRes.value?.data?.length) state.users = staffRes.value.data;
+      if (teamsRes.status === 'fulfilled' && teamsRes.value?.data?.length) state.teams = teamsRes.value.data;
+
+      saveState();
+      refreshAllViews();
+      if (_sessionUser && _sessionUser.role === 'customer') {
+        populateUserPortalData(_sessionUser);
+      }
+    } catch (err) {
+      console.warn('[Sync] Fallback to local state:', err.message);
+    }
   }
 
   // =========================================================================
@@ -1344,6 +1473,13 @@ document.addEventListener('DOMContentLoaded', function () {
     saveState();
     refreshAllViews();
 
+    try {
+      await ApiClient.post('/api/invoices/run-billing-day', {});
+      await syncStateWithBackend();
+    } catch (apiErr) {
+      console.warn('[API] Billing day batch executed locally:', apiErr.message);
+    }
+
     if (createdCount > 0) {
       showToast(`Billing Day Success: ${createdCount} new recurring invoice(s) generated without error!`, 'success');
     } else {
@@ -1456,7 +1592,7 @@ document.addEventListener('DOMContentLoaded', function () {
     modal.classList.remove('hidden');
   }
 
-  function transitionSub(subId, newStage) {
+  async function transitionSub(subId, newStage) {
     const sub = state.subscriptions.find(s => s.id === subId);
     if (!sub) return;
 
@@ -1469,6 +1605,15 @@ document.addEventListener('DOMContentLoaded', function () {
     showToast(`Subscription ${sub.id} transitioned to stage "${newStage}"`, 'success');
     viewSubscriptionDetail(subId);
     refreshAllViews();
+
+    try {
+      await ApiClient.put('/api/subscriptions/' + subId, {
+        stage: newStage,
+        nextBillingDate: sub.nextBillingDate
+      });
+    } catch (apiErr) {
+      console.warn('[API] Subscription stage saved locally:', apiErr.message);
+    }
   }
 
   // =========================================================================
@@ -1597,6 +1742,10 @@ document.addEventListener('DOMContentLoaded', function () {
     showToast(`Payment of ${formatMoney(amount)} recorded against ${invoiceId}. Invoice settled!`, 'success');
     document.getElementById('record-payment-modal').classList.add('hidden');
     refreshAllViews();
+
+    try {
+      await ApiClient.post('/api/payments', newPayment);
+    } catch (e) {}
   }
 
   // =========================================================================
@@ -1826,6 +1975,12 @@ document.addEventListener('DOMContentLoaded', function () {
     showToast(`Quotation ${newSub.id} created successfully!`, 'success');
     document.getElementById('sub-modal').classList.add('hidden');
     refreshAllViews();
+
+    try {
+      await ApiClient.post('/api/subscriptions', newSub);
+    } catch (apiErr) {
+      console.warn('[API] Subscription created in local cache:', apiErr.message);
+    }
   }
 
   // =========================================================================
@@ -1956,6 +2111,7 @@ document.addEventListener('DOMContentLoaded', function () {
       showToast(`Product "${name}" added to catalog!`, 'success');
       document.getElementById('product-modal').classList.add('hidden');
       renderProductsAndPlans();
+      ApiClient.post('/api/products', newProd).catch(() => {});
     });
 
     document.getElementById('open-new-plan-modal-btn')?.addEventListener('click', () => {
@@ -1984,6 +2140,7 @@ document.addEventListener('DOMContentLoaded', function () {
       showToast(`Billing plan "${name}" configured!`, 'success');
       document.getElementById('plan-modal').classList.add('hidden');
       renderProductsAndPlans();
+      ApiClient.post('/api/plans', newPlan).catch(() => {});
     });
 
     document.getElementById('open-new-discount-modal-btn')?.addEventListener('click', () => {
@@ -2014,6 +2171,7 @@ document.addEventListener('DOMContentLoaded', function () {
       showToast(`Discount rule "${name}" created!`, 'success');
       document.getElementById('discount-modal').classList.add('hidden');
       renderDiscountsAndTaxes();
+      ApiClient.post('/api/discounts', newDisc).catch(() => {});
     });
 
     document.getElementById('open-new-staff-modal-btn')?.addEventListener('click', () => {
@@ -2031,6 +2189,7 @@ document.addEventListener('DOMContentLoaded', function () {
       showToast(`Added internal staff member "${name}" (${role})`, 'success');
       document.getElementById('staff-modal').classList.add('hidden');
       renderStaffTable();
+      ApiClient.post('/api/staff', { fullName: name, email, role }).catch(() => {});
     });
 
     // Customer Auth / Sign In Modal
@@ -2053,6 +2212,7 @@ document.addEventListener('DOMContentLoaded', function () {
         showToast(`Invoice ${inv.id} Confirmed!`, 'success');
         viewInvoiceModal(inv.id);
         refreshAllViews();
+        ApiClient.put('/api/invoices/' + inv.id, { status: 'Confirmed' }).catch(() => {});
       }
     });
 
@@ -2085,19 +2245,18 @@ document.addEventListener('DOMContentLoaded', function () {
     viewSubscriptionDetail,
     transitionSub,
     viewInvoiceModal,
-    openRecordPaymentFor
+    openRecordPaymentFor,
+    syncWithBackend: syncStateWithBackend
   };
 
   // Expose applyRolePermissions globally so the login system can call it after login
   window.applyRolePermissions = applyRolePermissions;
 
-  function init() {
+  async function init() {
     loadState();
     setupEvents();
-    // NOTE: applyRolePermissions() is intentionally NOT called here on boot.
-    // The login screen gates the app; applyRolePermissions() is called by
-    // revealApp() after successful authentication.
     refreshAllViews();
+    await syncStateWithBackend();
   }
 
   if (document.readyState === 'loading') {
