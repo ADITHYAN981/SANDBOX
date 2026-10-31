@@ -3,6 +3,477 @@
  * Unified platform running plans, quotes, subscriptions, billing day batches, and financial reporting.
  */
 
+// =============================================================================
+// ██╗      ██████╗  ██████╗ ██╗███╗   ██╗    ███████╗██╗   ██╗███████╗████████╗███████╗███╗   ███╗
+// ██║     ██╔═══██╗██╔════╝ ██║████╗  ██║    ██╔════╝╚██╗ ██╔╝██╔════╝╚══██╔══╝██╔════╝████╗ ████║
+// ██║     ██║   ██║██║  ███╗██║██╔██╗ ██║    ███████╗ ╚████╔╝ ███████╗   ██║   █████╗  ██╔████╔██║
+// ██║     ██║   ██║██║   ██║██║██║╚██╗██║    ╚════██║  ╚██╔╝  ╚════██║   ██║   ██╔══╝  ██║╚██╔╝██║
+// ███████╗╚██████╔╝╚██████╔╝██║██║ ╚████║    ███████║   ██║   ███████║   ██║   ███████╗██║ ╚═╝ ██║
+// =============================================================================
+
+// =============================================================================
+// MASTER CREDENTIALS — No database, hardcoded
+// =============================================================================
+// Role      | Email                    | Password
+// ----------|--------------------------|------------------
+// Admin     | admin@brightloop.com     | Admin@2024!
+// Employee  | employee@brightloop.com  | Employee@2024!
+// Users     | Register freely on the User tab
+// =============================================================================
+
+const MASTER_USERS = {
+  admin: {
+    email: 'admin@brightloop.com',
+    password: 'Admin@2024!',
+    name: 'Sarah Jenkins',
+    title: 'System Administrator',
+    role: 'admin',
+    initials: 'SJ'
+  },
+  employee: {
+    email: 'employee@brightloop.com',
+    password: 'Employee@2024!',
+    name: 'Alex Rivera',
+    title: 'Sales & Billing Specialist',
+    role: 'staff',
+    initials: 'AR'
+  }
+};
+
+// Registered users stored in localStorage
+const USERS_STORAGE_KEY = 'brightloop_registered_users_v1';
+
+let _loginRoleTab = 'admin'; // active tab: 'admin' | 'employee' | 'user'
+let _sessionUser  = null;    // currently logged-in session
+
+// =============================================================================
+// HELPERS
+// =============================================================================
+
+function getRegisteredUsers() {
+  try { return JSON.parse(localStorage.getItem(USERS_STORAGE_KEY)) || []; }
+  catch(e) { return []; }
+}
+
+function saveRegisteredUsers(users) {
+  localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
+}
+
+function getInitials(name) {
+  return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+}
+
+function formatMoney(n) {
+  return '$' + (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function validatePassword(pw) {
+  if (pw.length < 8) return 'Password must be at least 8 characters.';
+  if (!/[A-Z]/.test(pw)) return 'Password must contain at least one uppercase letter.';
+  if (!/[!@#$%^&*]/.test(pw)) return 'Password must contain at least one special character (!@#$%^&*).';
+  return null;
+}
+
+// =============================================================================
+// TAB SWITCHING
+// =============================================================================
+
+function switchLoginRole(role) {
+  _loginRoleTab = role;
+
+  // Update tab button active states
+  document.querySelectorAll('.login-tab-btn').forEach(btn => btn.classList.remove('active'));
+  const activeTab = document.getElementById('tab-' + role);
+  if (activeTab) { activeTab.classList.add('active'); activeTab.setAttribute('aria-selected', 'true'); }
+
+  // Show/hide panels
+  ['admin', 'employee', 'user'].forEach(r => {
+    const panel = document.getElementById('panel-' + r);
+    if (panel) panel.classList.toggle('hidden', r !== role);
+  });
+
+  // Fill master credential hints
+  if (role === 'admin') {
+    const u = MASTER_USERS.admin;
+    const el = document.getElementById('admin-hint-cred');
+    if (el) el.innerHTML = 'Email &nbsp;&nbsp;&nbsp;: ' + u.email + '<br>Password : ' + u.password;
+    const emailEl = document.getElementById('admin-email');
+    const passEl  = document.getElementById('admin-password');
+    if (emailEl) emailEl.value = u.email;
+    if (passEl)  passEl.value  = u.password;
+  } else if (role === 'employee') {
+    const u = MASTER_USERS.employee;
+    const el = document.getElementById('employee-hint-cred');
+    if (el) el.innerHTML = 'Email &nbsp;&nbsp;&nbsp;: ' + u.email + '<br>Password : ' + u.password;
+    const emailEl = document.getElementById('employee-email');
+    const passEl  = document.getElementById('employee-password');
+    if (emailEl) emailEl.value = u.email;
+    if (passEl)  passEl.value  = u.password;
+  }
+
+  // Clear all error messages
+  ['admin-error-msg','employee-error-msg','user-login-error','user-register-error','user-register-success']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.textContent = ''; });
+}
+
+function switchUserSubTab(sub) {
+  document.querySelectorAll('.user-subtab-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('subtab-' + sub);
+  if (btn) btn.classList.add('active');
+
+  const loginPanel = document.getElementById('user-login-panel');
+  const regPanel   = document.getElementById('user-register-panel');
+  if (loginPanel) loginPanel.classList.toggle('hidden', sub !== 'login');
+  if (regPanel)   regPanel.classList.toggle('hidden', sub !== 'register');
+
+  ['user-login-error','user-register-error','user-register-success']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.textContent = ''; });
+}
+
+// =============================================================================
+// MASTER LOGIN  (Admin / Employee)
+// =============================================================================
+
+function handleMasterLogin(e, role) {
+  e.preventDefault();
+  const emailInput = document.getElementById(role + '-email').value.trim().toLowerCase();
+  const passInput  = document.getElementById(role + '-password').value;
+  const errEl      = document.getElementById(role + '-error-msg');
+  const btnEl      = document.getElementById(role + '-submit-btn');
+
+  errEl.textContent = '';
+
+  const master = MASTER_USERS[role];
+  if (!master || master.email.toLowerCase() !== emailInput || master.password !== passInput) {
+    errEl.textContent = '✕ Incorrect master credentials. Please try again.';
+    return;
+  }
+
+  // Success animation
+  btnEl.textContent = '✓ Welcome, ' + master.name + '!';
+  btnEl.style.background = 'linear-gradient(135deg, #10b981, #059669)';
+
+  setTimeout(() => {
+    _sessionUser = { ...master };
+    revealMainApp(_sessionUser);
+  }, 750);
+}
+
+// =============================================================================
+// USER REGISTER
+// =============================================================================
+
+function handleUserRegister(e) {
+  e.preventDefault();
+  const name    = document.getElementById('reg-name').value.trim();
+  const company = document.getElementById('reg-company').value.trim();
+  const email   = document.getElementById('reg-email').value.trim().toLowerCase();
+  const password= document.getElementById('reg-password').value;
+  const errEl   = document.getElementById('user-register-error');
+  const sucEl   = document.getElementById('user-register-success');
+  const btnEl   = document.getElementById('user-register-btn');
+
+  errEl.textContent = '';
+  sucEl.textContent = '';
+
+  // Validate password strength
+  const pwErr = validatePassword(password);
+  if (pwErr) { errEl.textContent = '✕ ' + pwErr; return; }
+
+  // Check if email already exists
+  const users = getRegisteredUsers();
+  if (users.find(u => u.email === email)) {
+    errEl.textContent = '✕ An account with this email already exists. Please sign in.';
+    return;
+  }
+
+  // Register user
+  const newUser = {
+    id: 'usr_reg_' + Date.now(),
+    name,
+    company,
+    email,
+    password, // NOTE: plain-text is fine for this no-backend demo
+    role: 'customer',
+    initials: getInitials(name),
+    registeredAt: new Date().toISOString()
+  };
+  users.push(newUser);
+  saveRegisteredUsers(users);
+
+  btnEl.textContent = '✓ Account created!';
+  btnEl.style.background = 'linear-gradient(135deg,#10b981,#059669)';
+  sucEl.textContent = '🎉 Registration successful! Redirecting to your portal...';
+
+  setTimeout(() => {
+    _sessionUser = newUser;
+    revealUserPortal(newUser);
+    // Reset button
+    btnEl.textContent = '✨ Create Account';
+    btnEl.style.background = '';
+  }, 1200);
+}
+
+// =============================================================================
+// USER LOGIN
+// =============================================================================
+
+function handleUserLogin(e) {
+  e.preventDefault();
+  const email    = document.getElementById('user-login-email').value.trim().toLowerCase();
+  const password = document.getElementById('user-login-password').value;
+  const errEl    = document.getElementById('user-login-error');
+  const btnEl    = document.getElementById('user-login-btn');
+
+  errEl.textContent = '';
+
+  const users = getRegisteredUsers();
+  const found = users.find(u => u.email === email && u.password === password);
+
+  if (!found) {
+    errEl.textContent = '✕ Invalid email or password. Register if you don\'t have an account.';
+    return;
+  }
+
+  btnEl.textContent = '✓ Welcome, ' + found.name + '!';
+  btnEl.style.background = 'linear-gradient(135deg,#10b981,#059669)';
+
+  setTimeout(() => {
+    _sessionUser = found;
+    revealUserPortal(found);
+    btnEl.textContent = '🚀 Sign In to Portal';
+    btnEl.style.background = '';
+  }, 750);
+}
+
+// =============================================================================
+// REVEAL MAIN APP  (Admin / Employee)
+// =============================================================================
+
+function revealMainApp(user) {
+  const loginScreen = document.getElementById('login-screen');
+  loginScreen.style.transition = 'opacity 0.4s ease';
+  loginScreen.style.opacity = '0';
+
+  setTimeout(() => {
+    loginScreen.style.display = 'none';
+
+    // Sync state.currentUser inside the IIFE
+    if (window._brightloopState) {
+      window._brightloopState.currentUser = {
+        id:    user.role === 'admin' ? 'usr_admin' : 'usr_staff_1',
+        name:  user.name,
+        email: user.email,
+        role:  user.role,
+        title: user.title
+      };
+    }
+
+    updateNavUserWidget(user);
+    applyLoginRoleRestrictions(user.role);
+
+    if (typeof window.applyRolePermissions === 'function') {
+      window.applyRolePermissions();
+    }
+  }, 420);
+}
+
+// =============================================================================
+// REVEAL USER PORTAL
+// =============================================================================
+
+function revealUserPortal(user) {
+  const loginScreen = document.getElementById('login-screen');
+  const portal      = document.getElementById('user-portal');
+
+  loginScreen.style.transition = 'opacity 0.4s ease';
+  loginScreen.style.opacity = '0';
+
+  setTimeout(() => {
+    loginScreen.style.display = 'none';
+    portal.classList.remove('hidden');
+
+    // Populate portal header
+    const avatarEl = document.getElementById('portal-avatar');
+    if (avatarEl) {
+      avatarEl.textContent = user.initials || getInitials(user.name);
+    }
+    const nameEl = document.getElementById('portal-user-name');
+    if (nameEl) nameEl.textContent = user.name;
+
+    const compEl = document.getElementById('portal-user-company');
+    if (compEl) compEl.textContent = user.company || user.email;
+
+    const headEl = document.getElementById('portal-welcome-heading');
+    if (headEl) headEl.textContent = 'Welcome back, ' + user.name.split(' ')[0] + '! 👋';
+
+    const subEl = document.getElementById('portal-welcome-sub');
+    if (subEl) subEl.textContent = (user.company ? user.company + ' · ' : '') + 'Your Brightloop customer portal.';
+
+    // Populate portal stats from app state
+    populateUserPortalData(user);
+  }, 420);
+}
+
+function populateUserPortalData(user) {
+  const state = window._brightloopState;
+  if (!state) {
+    document.getElementById('portal-sub-count').textContent    = '0';
+    document.getElementById('portal-inv-count').textContent    = '0';
+    document.getElementById('portal-paid-total').textContent   = '$0.00';
+    document.getElementById('portal-overdue-total').textContent= '$0.00';
+    return;
+  }
+
+  const email   = user.email.toLowerCase();
+  const company = (user.company || '').toLowerCase();
+
+  // Match subscriptions by customer email OR company name
+  const mySubs = state.subscriptions.filter(s =>
+    (s.customerEmail && s.customerEmail.toLowerCase() === email) ||
+    (s.customer && s.customer.toLowerCase() === company)
+  );
+  const myInvs = state.invoices.filter(i =>
+    (i.customerEmail && i.customerEmail.toLowerCase() === email) ||
+    (i.customer && i.customer.toLowerCase() === company)
+  );
+
+  const activeSubs = mySubs.filter(s => s.stage === 'Active').length;
+  let paid    = 0;
+  let overdue = 0;
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  myInvs.forEach(inv => {
+    if (inv.status === 'Paid') {
+      paid += inv.total || 0;
+    } else if (inv.status === 'Confirmed' && inv.dueDate && inv.dueDate < todayStr) {
+      overdue += inv.total || 0;
+    }
+  });
+
+  document.getElementById('portal-sub-count').textContent    = activeSubs;
+  document.getElementById('portal-inv-count').textContent    = myInvs.length;
+  document.getElementById('portal-paid-total').textContent   = formatMoney(paid);
+  document.getElementById('portal-overdue-total').textContent= formatMoney(overdue);
+
+  // Invoice table
+  const tbody  = document.getElementById('portal-invoices-tbody');
+  const badge  = document.getElementById('portal-inv-badge');
+  if (badge) badge.textContent = myInvs.length + ' record' + (myInvs.length !== 1 ? 's' : '');
+
+  if (tbody) {
+    if (myInvs.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:2rem;color:rgba(255,255,255,0.3);border-color:rgba(255,255,255,0.05);">No invoices found for your account.</td></tr>';
+    } else {
+      tbody.innerHTML = myInvs.slice(0, 10).map(inv => {
+        const statusColors = {
+          'Paid':      '#34d399',
+          'Confirmed': '#93c5fd',
+          'Draft':     '#94a3b8',
+          'Cancelled': '#f87171'
+        };
+        const col = statusColors[inv.status] || '#94a3b8';
+        return `<tr>
+          <td style="color:rgba(255,255,255,0.85);border-color:rgba(255,255,255,0.06);font-family:var(--font-mono);font-weight:600;">${inv.id}</td>
+          <td style="color:rgba(255,255,255,0.6);border-color:rgba(255,255,255,0.06);">${inv.date || '—'}</td>
+          <td style="color:rgba(255,255,255,0.6);border-color:rgba(255,255,255,0.06);">${inv.subRef || '—'}</td>
+          <td style="color:rgba(255,255,255,0.85);border-color:rgba(255,255,255,0.06);font-family:var(--font-mono);font-weight:700;">${formatMoney(inv.total)}</td>
+          <td style="border-color:rgba(255,255,255,0.06);"><span style="background:${col}22;color:${col};padding:.2rem .65rem;border-radius:999px;font-size:.72rem;font-weight:700;text-transform:uppercase;">${inv.status}</span></td>
+        </tr>`;
+      }).join('');
+    }
+  }
+}
+
+// =============================================================================
+// NAV USER WIDGET  (Admin / Employee top-nav)
+// =============================================================================
+
+function updateNavUserWidget(user) {
+  const avatarEl = document.getElementById('nav-user-avatar');
+  const nameEl   = document.getElementById('nav-user-name');
+  const roleEl   = document.getElementById('nav-user-role');
+
+  if (avatarEl) {
+    avatarEl.textContent = user.initials || getInitials(user.name);
+    avatarEl.className   = 'nav-user-avatar role-' + (user.role === 'admin' ? 'admin' : 'staff');
+  }
+  if (nameEl) nameEl.textContent = user.name;
+  if (roleEl) {
+    roleEl.textContent = user.role === 'admin' ? '👑 Administrator' : '💼 Employee';
+    roleEl.className   = 'nav-user-role role-' + (user.role === 'admin' ? 'admin' : 'staff');
+  }
+}
+
+// =============================================================================
+// ROLE RESTRICTIONS  (Admin vs Employee for main app)
+// =============================================================================
+
+function applyLoginRoleRestrictions(role) {
+  document.querySelectorAll('.admin-only').forEach(el => {
+    el.style.display = (role === 'admin') ? '' : 'none';
+  });
+  document.querySelectorAll('.employee-only').forEach(el => {
+    el.style.display = (role === 'staff') ? '' : 'none';
+  });
+}
+
+// =============================================================================
+// LOGOUT
+// =============================================================================
+
+function handleLogout() {
+  _sessionUser = null;
+
+  // Hide portal if visible
+  const portal = document.getElementById('user-portal');
+  if (portal) portal.classList.add('hidden');
+
+  // Reset main app nav widget
+  ['nav-user-avatar','nav-user-name','nav-user-role'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = id === 'nav-user-avatar' ? '?' : '—'; el.className = id; }
+  });
+
+  // Show login screen with fade-in
+  const loginScreen = document.getElementById('login-screen');
+  loginScreen.style.display  = 'flex';
+  loginScreen.style.opacity  = '0';
+  loginScreen.style.transition = 'opacity 0.35s ease';
+  requestAnimationFrame(() => requestAnimationFrame(() => { loginScreen.style.opacity = '1'; }));
+
+  // Reset all forms and errors
+  ['admin-login-form','employee-login-form','user-login-form','user-register-form']
+    .forEach(id => { const f = document.getElementById(id); if (f) f.reset(); });
+  ['admin-error-msg','employee-error-msg','user-login-error','user-register-error','user-register-success']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.textContent = ''; });
+
+  // Reset submit buttons
+  const btns = [
+    { id: 'admin-submit-btn',    text: '🔐 Sign In as Admin' },
+    { id: 'employee-submit-btn', text: '🔐 Sign In as Employee' },
+    { id: 'user-login-btn',      text: '🚀 Sign In to Portal' },
+    { id: 'user-register-btn',   text: '✨ Create Account' }
+  ];
+  btns.forEach(b => {
+    const el = document.getElementById(b.id);
+    if (el) { el.textContent = b.text; el.style.background = ''; }
+  });
+
+  // Default to admin tab
+  switchLoginRole('admin');
+}
+
+// =============================================================================
+// BOOT
+// =============================================================================
+
+document.addEventListener('DOMContentLoaded', function () {
+  switchLoginRole('admin');
+  switchUserSubTab('login');
+});
+
+
 (function () {
   'use strict';
 
@@ -339,7 +810,7 @@
 
   // Platform State Container
   let state = {
-    currentUser: INITIAL_USERS[0], // default: admin
+    currentUser: INITIAL_USERS[0], // default: admin (will be overridden by login)
     users: INITIAL_USERS,
     products: INITIAL_PRODUCTS,
     plans: INITIAL_PLANS,
@@ -353,6 +824,9 @@
     activeSubDetailId: null,
     activeInvoiceDetailId: null
   };
+
+  // Expose state to the global login system so it can switch currentUser
+  window._brightloopState = state;
 
   function loadState() {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -1614,10 +2088,16 @@
     openRecordPaymentFor
   };
 
+  // Expose applyRolePermissions globally so the login system can call it after login
+  window.applyRolePermissions = applyRolePermissions;
+
   function init() {
     loadState();
     setupEvents();
-    applyRolePermissions();
+    // NOTE: applyRolePermissions() is intentionally NOT called here on boot.
+    // The login screen gates the app; applyRolePermissions() is called by
+    // revealApp() after successful authentication.
+    refreshAllViews();
   }
 
   if (document.readyState === 'loading') {
